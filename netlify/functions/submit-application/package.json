@@ -1,0 +1,9 @@
+{
+  "name": "submit-application",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "googleapis": "^148.0.0",
+    "resend": "^4.2.0"
+  }
+}
