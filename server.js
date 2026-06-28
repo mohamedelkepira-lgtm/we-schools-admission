@@ -85,7 +85,7 @@ async function sendEmail(apiKey, data) {
   })
 }
 
-app.post('/.netlify/functions/submit-application', async (req, res) => {
+app.post('/api/submit-application', async (req, res) => {
   try {
     const data = req.body
     data.requestNumber = generateRequestNumber()

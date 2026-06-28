@@ -1,13 +1,12 @@
 import { createPrivateKey, sign } from 'crypto'
 
-export async function handler(event) {
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) }
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' })
   }
 
   try {
-    const data = JSON.parse(event.body)
-
+    const data = req.body
     const sheetId = process.env.GOOGLE_SHEET_ID
     const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n')
     const clientEmail = process.env.GOOGLE_CLIENT_EMAIL
@@ -45,16 +44,10 @@ export async function handler(event) {
       }
     }
 
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ success: true, requestNumber: data.requestNumber }),
-    }
+    return res.json({ success: true, requestNumber: data.requestNumber })
   } catch (error) {
     console.error('Submit error:', error)
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: error.message || 'Internal server error' }),
-    }
+    return res.status(500).json({ error: error.message || 'Internal server error' })
   }
 }
 
@@ -77,7 +70,7 @@ async function getGoogleToken(clientEmail, privateKey) {
   const sig = sign(null, Buffer.from(`${header}.${payload}`), key)
   const jwt = `${header}.${payload}.${base64url(sig)}`
 
-  const res = await fetch('https://oauth2.googleapis.com/token', {
+  const r = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
@@ -86,9 +79,9 @@ async function getGoogleToken(clientEmail, privateKey) {
     }),
   })
 
-  const data = await res.json()
-  if (!data.access_token) throw new Error('Google Auth failed')
-  return data.access_token
+  const result = await r.json()
+  if (!result.access_token) throw new Error('Google Auth failed')
+  return result.access_token
 }
 
 async function appendToGoogleSheet(token, sheetId, headers, row) {
@@ -117,7 +110,7 @@ async function sendEmail(apiKey, data) {
       from: process.env.EMAIL_FROM || 'WE Schools <noreply@weschools.com>',
       to: [data.email],
       subject: `تأكيد استلام طلب التسجيل - ${data.requestNumber}`,
-      html: `<div dir="rtl" style="font-family:'Cairo',Arial,sans-serif;max-width:600px;margin:0 auto">
+      html: `<div dir="rtl" style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
 <div style="background:#1e3a5f;padding:30px;text-align:center;border-radius:16px 16px 0 0">
 <h1 style="color:#fff;margin:0;font-size:24px">WE Schools</h1></div>
 <div style="background:#f9fafb;padding:30px;border-radius:0 0 16px 16px">
