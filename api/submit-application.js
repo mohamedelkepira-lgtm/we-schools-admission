@@ -12,23 +12,20 @@ export default async function handler(req, res) {
     const clientEmail = process.env.GOOGLE_CLIENT_EMAIL
 
     const headersRow = [
-      'رقم الطلب', 'تاريخ التقديم', 'الاسم بالعربية', 'الاسم بالإنجليزية',
-      'تاريخ الميلاد', 'الجنس', 'الجنسية', 'الديانة', 'العنوان',
-      'رقم الهاتف', 'البريد الإلكتروني', 'رقم بطاقة الطالب',
-      'اسم ولي الأمر', 'رقم بطاقة ولي الأمر', 'هاتف ولي الأمر', 'بريد ولي الأمر',
-      'المدرسة السابقة',
+      'رقم الطلب', 'اسم الطالب', 'كود الطالب', 'المدرسة السابقة',
+      'رقم الطالب', 'رقم ولي الأمر', 'الحالة الاجتماعية', 'حالة الطلب', 'تاريخ التقديم',
+      'الاسم بالإنجليزية', 'تاريخ الميلاد', 'الجنس', 'الجنسية', 'الديانة',
+      'العنوان', 'البريد الإلكتروني', 'رقم بطاقة الطالب',
+      'اسم ولي الأمر', 'رقم بطاقة ولي الأمر', 'بريد ولي الأمر',
     ]
 
     const valuesRow = [
-      data.requestNumber, data.submittedAt,
-      data.fullNameAr, data.fullNameEn,
-      data.dateOfBirth, data.gender,
-      data.nationality, data.religion,
-      data.address, data.phone, data.email,
-      data.studentNationalId,
-      data.parentName, data.parentNationalId,
-      data.parentPhone, data.parentEmail,
-      data.previousSchool,
+      data.requestNumber, data.fullNameAr, data.requestNumber, data.previousSchool,
+      data.phone, data.parentPhone,
+      'قيد المراجعة', 'قيد المراجعة', data.submittedAt,
+      data.fullNameEn, data.dateOfBirth, data.gender,
+      data.nationality, data.religion, data.address, data.email,
+      data.studentNationalId, data.parentName, data.parentNationalId, data.parentEmail,
     ]
 
     if (sheetId && privateKey && clientEmail) {
@@ -85,19 +82,21 @@ async function getGoogleToken(clientEmail, privateKey) {
 }
 
 async function appendToGoogleSheet(token, sheetId, headers, row) {
-  const base = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Sheet1`
+  const base = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Applications`
   const opts = { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
 
-  const check = await fetch(`${base}!A1:Q1`, { headers: opts.headers })
+  const totalCols = headers.length
+  const endCol = String.fromCharCode(64 + totalCols)
+  const check = await fetch(`${base}!A1:${endCol}1`, { headers: opts.headers })
   const existing = await check.json()
 
   if (!existing.values || existing.values.length === 0) {
-    await fetch(`${base}!A1:Q1?valueInputOption=USER_ENTERED`, {
+    await fetch(`${base}!A1:${endCol}1?valueInputOption=USER_ENTERED`, {
       method: 'PUT', ...opts, body: JSON.stringify({ values: [headers] }),
     })
   }
 
-  await fetch(`${base}!A:Q:append?valueInputOption=USER_ENTERED`, {
+  await fetch(`${base}!A:${endCol}:append?valueInputOption=USER_ENTERED`, {
     method: 'POST', ...opts, body: JSON.stringify({ values: [row] }),
   })
 }

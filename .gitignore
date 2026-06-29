@@ -24,3 +24,6 @@ _local_data.json
 *.njsproj
 *.sln
 *.sw?
+
+# Service account key
+we-schools-admission*.json
