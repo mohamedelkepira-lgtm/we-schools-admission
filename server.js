@@ -101,17 +101,23 @@ app.post('/api/submit-application', async (req, res) => {
       const token = await getGoogleToken(clientEmail, privateKey)
       const headers = [
         'رقم الطلب', 'اسم الطالب', 'كود الطالب', 'المدرسة السابقة',
+        'الصف الدراسي السابق', 'المحافظة', 'المركز / المدينة',
         'رقم الطالب', 'رقم ولي الأمر', 'الحالة الاجتماعية', 'حالة الطلب', 'تاريخ التقديم',
+        'وقت آخر تعديل',
         'الاسم بالإنجليزية', 'تاريخ الميلاد', 'الجنس', 'الجنسية', 'الديانة',
+        'مهنة الأب', 'مهنة الأم',
         'العنوان', 'البريد الإلكتروني', 'رقم بطاقة الطالب',
         'اسم ولي الأمر', 'رقم بطاقة ولي الأمر', 'بريد ولي الأمر',
       ]
       await appendToGoogleSheet(token, sheetId, headers, [
-        data.requestNumber, data.fullNameAr, data.requestNumber, data.previousSchool,
+        data.requestNumber, data.fullNameAr, data.requestNumber,
+        data.previousSchool || '', data.previousGrade || '', data.governorate || '', data.city || '',
         data.phone, data.parentPhone,
-        'قيد المراجعة', 'قيد المراجعة', data.submittedAt,
+        'قيد المراجعة', 'قيد المراجعة', data.submittedAt, data.submittedAt || '',
         data.fullNameEn, data.dateOfBirth, data.gender,
-        data.nationality, data.religion, data.address, data.email,
+        data.nationality, data.religion,
+        data.fatherOccupation || '', data.motherOccupation || '',
+        data.address, data.email,
         data.studentNationalId, data.parentName, data.parentNationalId, data.parentEmail,
       ])
     } else {

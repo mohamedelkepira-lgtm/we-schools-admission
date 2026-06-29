@@ -27,3 +27,6 @@ _local_data.json
 
 # Service account key
 we-schools-admission*.json
+
+# Excel temp files
+~$*
