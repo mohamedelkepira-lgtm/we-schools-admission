@@ -36,7 +36,7 @@ const APP_COLS = [
 ]
 
 const STATUSES = ['قيد المراجعة', 'مقبول', 'مرفوض', 'ناقص مستندات', 'بانتظار التواصل']
-const STATUS_COLORS = {
+const STATUS_CLR = {
   'مقبول':        { bg: 'E4F4E4', fg: C.green },
   'مرفوض':        { bg: 'FBE4E4', fg: C.red },
   'قيد المراجعة':  { bg: 'FEF7DA', fg: C.yellow },
@@ -55,230 +55,251 @@ const DOC_COLS = [
 ]
 
 // ──── Helpers ────
-function colLetter(n) {
-  let s = ''
-  while (n > 0) { n--; s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) }
-  return s
-}
+function cl(n) { let s = ''; while (n > 0) { n--; s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) } return s }
 
-const FH = { name: 'Calibri', bold: true, color: { argb: C.white }, size: 11 }
-const HB = () => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: C.blue } })
-const HA = () => ({ horizontal: 'center', vertical: 'middle' })
-const BD = () => ({
-  top: { style: 'thin', color: { argb: C.border } },
-  left: { style: 'thin', color: { argb: C.border } },
-  bottom: { style: 'thin', color: { argb: C.border } },
-  right: { style: 'thin', color: { argb: C.border } },
-})
+const fH   = { name: 'Calibri', bold: true, color: { argb: C.white }, size: 11 }
+const hFill = () => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: C.blue } })
+const hA    = () => ({ horizontal: 'center', vertical: 'middle' })
+const bd    = () => ({ top: { style: 'thin', color: { argb: C.border } }, left: { style: 'thin', color: { argb: C.border } }, bottom: { style: 'thin', color: { argb: C.border } }, right: { style: 'thin', color: { argb: C.border } } })
 
-function styleHdr(ws, n) {
-  const r = ws.getRow(1)
-  r.height = 32
-  for (let c = 1; c <= n; c++) { const v = r.getCell(c); v.font = FH; v.fill = HB(); v.alignment = HA(); v.border = BD() }
+function hdr(ws, n) {
+  const r = ws.getRow(1); r.height = 32
+  for (let c = 1; c <= n; c++) { const v = r.getCell(c); v.font = fH; v.fill = hFill(); v.alignment = hA(); v.border = bd() }
   ws.views = [{ state: 'frozen', ySplit: 1 }]
   ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: n } }
 }
 
-function styleRows(ws, n, start) {
+function rows(ws, n, start) {
   ws.eachRow((row, rn) => {
     if (rn < start) return
     const bg = (rn - start) % 2 === 0 ? C.bgEven : C.bgOdd
     row.eachCell((c, cn) => {
       if (cn > n) return
-      c.border = BD()
-      c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
+      c.border = bd(); c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
       if (!c.fill || c.fill.fgColor?.argb !== C.blue) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } }
     })
   })
 }
 
-function formula(v) { return { formula: v, date1904: false } }
+function fm(v) { return { formula: v, date1904: false } }
+
+// ──── Unique-extraction formula (Excel 2019 compatible, no CSE required) ────
+// Uses INDEX(COUNTIF(...),0) to force array evaluation without Ctrl+Shift+Enter
+function uniqF(dataCol, headerRow) {
+  return `IFERROR(INDEX(Applications!$${dataCol}$${2}:$${dataCol}$${9999}, MATCH(0, INDEX(COUNTIF($${cl(1)}$${headerRow}:$${cl(1)}${headerRow}, Applications!$${dataCol}$${2}:$${dataCol}$${9999}), 0), 0)), "")`
+}
+function countF(dataCol) {
+  return `IF(A11="","",COUNTIF(Applications!$${dataCol}$${2}:$${dataCol}$${9999}, A11))`
+}
 
 async function main() {
   const wb = new ExcelJS.Workbook()
-  wb.creator = 'WE Schools'
-  wb.created = new Date()
+  wb.creator = 'WE Schools'; wb.created = new Date()
 
-  // ════════════════════════════════ Sheet 1: Applications ════════════════════
+  // ════════════════════════ 1 · Applications ════════════════════════
   const app = wb.addWorksheet('Applications', { properties: { tabColor: { argb: C.blue } } })
-  app.columns = APP_COLS; styleHdr(app, APP_COLS.length)
+  app.columns = APP_COLS; hdr(app, APP_COLS.length)
   const e = {}; APP_COLS.forEach(c => { e[c.key] = '' }); app.addRow(e)
-  styleRows(app, APP_COLS.length, 2)
+  rows(app, APP_COLS.length, 2)
 
-  // Social status dropdown (col J)
+  const KL = cl(11) // status column letter
   app.getColumn(10).eachCell((c, rn) => { if (rn > 1) c.dataValidation = { type: 'list', formulae: ['"أعزب,متزوج"'], allowBlank: true } })
-  // App status dropdown (col K) — 5 values
-  const kL = colLetter(11)
   app.getColumn(11).eachCell((c, rn) => { if (rn > 1) c.dataValidation = { type: 'list', formulae: [`"${STATUSES.join(',')}"`], allowBlank: true } })
-  // Conditional formatting — status colors
-  for (const [s, cl] of Object.entries(STATUS_COLORS))
-    app.addConditionalFormatting({ ref: `${kL}2:${kL}1048576`, rules: [{ type: 'expression', formulae: [`${kL}2="${s}"`], style: { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: cl.bg } }, font: { color: { argb: cl.fg }, bold: true } } }] })
+  for (const [s, clr] of Object.entries(STATUS_CLR))
+    app.addConditionalFormatting({ ref: `${KL}2:${KL}1048576`, rules: [{ type: 'expression', formulae: [`${KL}2="${s}"`], style: { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: clr.bg } }, font: { color: { argb: clr.fg }, bold: true } } }] })
 
-  // ════════════════════════════════ Sheet 2: Statistics ════════════════════════
+  // ════════════════════════ 2 · Statistics ════════════════════════
   const st = wb.addWorksheet('Statistics', { properties: { tabColor: { argb: C.gold } } })
-  st.columns = [{ header: 'الإحصائية', key: 'a', width: 30 }, { header: 'القيمة', key: 'b', width: 18 }]
-  styleHdr(st, 2)
+  st.columns = [
+    { header: 'الإحصائية', key: 'a', width: 30 },
+    { header: 'القيمة', key: 'b', width: 16 },
+  ]
+  hdr(st, 2)
+  st.autoFilter = null  // only 1 header row is ok
 
-  const AR = 'Applications!A2:A1048576'       // request numbers
-  const SR = `${kL}2:${kL}1048576`            // statuses
-  const [SR2, SR3, SR4, SR5, SR6] = STATUSES.map(s => `"${s}"`)
+  const AR = 'Applications!A2:A1048576'
+  const SR = `${KL}2:${KL}1048576`
 
-  ;[
-    { a: 'إجمالي المتقدمين',        b: `=COUNTA(${AR})` },
-    { a: 'عدد المقبولين',           b: `=COUNTIF(${SR},${SR2})` },
-    { a: 'عدد المرفوضين',          b: `=COUNTIF(${SR},${SR3})` },
-    { a: 'قيد المراجعة',            b: `=COUNTIF(${SR},${SR4})` },
-    { a: 'ناقص مستندات',           b: `=COUNTIF(${SR},${SR5})` },
-    { a: 'بانتظار التواصل',         b: `=COUNTIF(${SR},${SR6})` },
-    {},
-    { a: 'الطلاب حسب المدرسة' },
-    { a: 'المدرسة', b: 'العدد' },
-  ].forEach(r => st.addRow(r))
+  // ── Main counts ──
+  const counts = [
+    ['📋 إجمالي المتقدمين',      `=COUNTA(${AR})`],
+    ['🟢 عدد المقبولين',          `=COUNTIF(${SR},"مقبول")`],
+    ['🔴 عدد المرفوضين',          `=COUNTIF(${SR},"مرفوض")`],
+    ['🟡 قيد المراجعة',           `=COUNTIF(${SR},"قيد المراجعة")`],
+    ['🟠 ناقص مستندات',          `=COUNTIF(${SR},"ناقص مستندات")`],
+    ['⏳ بانتظار التواصل',        `=COUNTIF(${SR},"بانتظار التواصل")`],
+  ]
+  let r = 2
+  for (const [label, f] of counts) {
+    st.getCell(`A${r}`).value = label
+    st.getCell(`A${r}`).font = { bold: true, size: 12, color: { argb: C.blue } }
+    st.getCell(`B${r}`).value = fm(f)
+    st.getCell(`B${r}`).font = { bold: true, size: 16, color: { argb: C.blue } }
+    r++
+  }
 
-  // Sorted unique schools (A11↓) — compatible array formula
-  st.getCell('A11').value = formula(
-    `IFERROR(INDEX(Applications!$D$2:$D$9999, MATCH(0, COUNTIF($A$10:$A10, Applications!$D$2:$D$9999), 0)), "")`
+  // Color the status values
+  const rowMap = { 'مقبول': 3, 'مرفوض': 4, 'قيد المراجعة': 5, 'ناقص مستندات': 6, 'بانتظار التواصل': 7 }
+  for (const [s, ri] of Object.entries(rowMap))
+    st.getCell(`B${ri}`).font = { bold: true, size: 16, color: { argb: STATUS_CLR[s].fg } }
+
+  // ── School distribution ──
+  r += 1  // blank row
+  st.getCell(`A${r}`).value = '🏫 توزيع المدارس'
+  st.getCell(`A${r}`).font = { bold: true, size: 12, color: { argb: C.blue } }
+  r++
+  st.getCell(`A${r}`).value = 'المدرسة'
+  st.getCell(`A${r}`).font = fH; st.getCell(`A${r}`).fill = hFill(); st.getCell(`A${r}`).alignment = hA()
+  st.getCell(`B${r}`).value = 'العدد'
+  st.getCell(`B${r}`).font = fH; st.getCell(`B${r}`).fill = hFill(); st.getCell(`B${r}`).alignment = hA()
+  const schoolStart = r
+  r++
+  // cell A{r}: unique schools — INDEX(…, INDEX(COUNTIF(…),0), …) avoids CSE
+  st.getCell(`A${r}`).value = fm(
+    `IFERROR(INDEX(Applications!$${cl(4)}$2:$${cl(4)}$9999, MATCH(0, INDEX(COUNTIF($${cl(1)}$${schoolStart}:$${cl(1)}${r-1}, Applications!$${cl(4)}$2:$${cl(4)}$9999), 0), 0)), "")`
   )
-  st.getCell('B11').value = formula(
-    `IF(A11="","",COUNTIF(Applications!$D$2:$D$9999, A11))`
-  )
+  st.getCell(`B${r}`).value = fm(`IF(A${r}="","",COUNTIF(Applications!$${cl(4)}$2:$${cl(4)}$9999, A${r}))`)
+  const schoolDataRow = r  // first data row
 
-  // Governorate distribution (D8:E8↓)
-  st.getCell('D8').value = 'الطلاب حسب المحافظة'
-  st.getCell('D8').font = FH; st.getCell('D8').fill = HB(); st.getCell('D8').alignment = HA()
-  st.getCell('E8').value = 'العدد'
-  st.getCell('E8').font = FH; st.getCell('E8').fill = HB(); st.getCell('E8').alignment = HA()
-  st.getCell('D9').value = formula(
-    `IFERROR(INDEX(Applications!$F$2:$F$9999, MATCH(0, COUNTIF($D$8:$D8, Applications!$F$2:$F$9999), 0)), "")`
+  // ── Governorate distribution ──
+  r += 2
+  st.getCell(`A${r}`).value = '🌍 توزيع المحافظات'
+  st.getCell(`A${r}`).font = { bold: true, size: 12, color: { argb: C.blue } }
+  r++
+  st.getCell(`A${r}`).value = 'المحافظة'
+  st.getCell(`A${r}`).font = fH; st.getCell(`A${r}`).fill = hFill(); st.getCell(`A${r}`).alignment = hA()
+  st.getCell(`B${r}`).value = 'العدد'
+  st.getCell(`B${r}`).font = fH; st.getCell(`B${r}`).fill = hFill(); st.getCell(`B${r}`).alignment = hA()
+  const govStart = r
+  r++
+  st.getCell(`A${r}`).value = fm(
+    `IFERROR(INDEX(Applications!$${cl(6)}$2:$${cl(6)}$9999, MATCH(0, INDEX(COUNTIF($${cl(1)}$${govStart}:$${cl(1)}${r-1}, Applications!$${cl(6)}$2:$${cl(6)}$9999), 0), 0)), "")`
   )
-  st.getCell('E9').value = formula(
-    `IF(D9="","",COUNTIF(Applications!$F$2:$F$9999, D9))`
-  )
+  st.getCell(`B${r}`).value = fm(`IF(A${r}="","",COUNTIF(Applications!$${cl(6)}$2:$${cl(6)}$9999, A${r}))`)
+  const govDataRow = r
 
-  styleRows(st, 2, 2)
-  // Big number styling
-  st.getCell('B2').font = { bold: true, size: 16, color: { argb: C.blue } }
-  const statusIdx = { 'مقبول': 3, 'مرفوض': 4, 'قيد المراجعة': 5, 'ناقص مستندات': 6, 'بانتظار التواصل': 7 }
-  for (const [s, idx] of Object.entries(statusIdx))
-    st.getCell(`B${idx}`).font = { bold: true, size: 14, color: { argb: STATUS_COLORS[s].fg } }
+  rows(st, 2, 2)
 
-  // ════════════════════════════════ Sheet 3: Search ════════════════════════════
+  // ════════════════════════ 3 · Search ════════════════════════
   const sr = wb.addWorksheet('Search', { properties: { tabColor: { argb: '2D5A8E' } } })
-  sr.columns = APP_COLS; styleHdr(sr, APP_COLS.length)
+  sr.columns = APP_COLS; hdr(sr, APP_COLS.length)
 
   sr.mergeCells('A2:A2')
-  sr.getCell('A2').value = '🔍 اكتب رقم الطلب'
+  sr.getCell('A2').value = '🔍 اكتب رقم الطلب في الخلية B2'
   sr.getCell('A2').font = { bold: true, color: { argb: C.blue }, size: 10 }
   sr.getCell('A2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EDF2F9' } }
-  sr.getCell('A2').alignment = HA(); sr.getCell('A2').border = BD()
+  sr.getCell('A2').alignment = hA(); sr.getCell('A2').border = bd()
 
   sr.getCell('B2').value = ''
   sr.getCell('B2').font = { size: 12 }
   sr.getCell('B2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9E0' } }
-  sr.getCell('B2').alignment = HA(); sr.getCell('B2').border = BD()
+  sr.getCell('B2').alignment = hA(); sr.getCell('B2').border = bd()
   sr.getRow(2).height = 30
 
-  // VLOOKUP by request number — works in ALL Excel versions
-  sr.getCell('A3').value = formula(
-    `IFERROR(VLOOKUP($B$2, Applications!$A$2:$Z$9999, COLUMN(A1), FALSE), "")`
-  )
-  // Fill across all columns
-  const srRow3 = sr.getRow(3)
-  for (let c = 2; c <= APP_COLS.length; c++) {
-    srRow3.getCell(c).value = formula(
-      `IFERROR(VLOOKUP($B$2, Applications!$A$2:$Z$9999, ${c}, FALSE), "")`
-    )
-  }
+  // VLOOKUP across all columns
+  for (let c = 1; c <= APP_COLS.length; c++)
+    sr.getRow(3).getCell(c).value = fm(`IFERROR(VLOOKUP($B$2, Applications!$A$2:$Z$9999, ${c}, FALSE), "")`)
 
-  // ════════════════════════════════ Sheet 4: Documents ════════════════════════
+  // ════════════════════════ 4 · Documents ════════════════════════
   const dc = wb.addWorksheet('Documents', { properties: { tabColor: { argb: C.green } } })
-  dc.columns = DOC_COLS; styleHdr(dc, DOC_COLS.length)
-  dc.addRow({}); styleRows(dc, DOC_COLS.length, 2)
-  dc.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: DOC_COLS.length } }
+  dc.columns = DOC_COLS; hdr(dc, DOC_COLS.length)
+  dc.addRow({}); rows(dc, DOC_COLS.length, 2)
 
   for (let c = 3; c <= DOC_COLS.length; c++) {
-    const cl = colLetter(c)
-    dc.getColumn(c).eachCell((cell, rn) => {
-      if (rn > 1) { cell.dataValidation = { type: 'list', formulae: ['"✓,✗"'], allowBlank: true }; cell.value = '✗' }
-    })
-    dc.addConditionalFormatting({ ref: `${cl}2:${cl}1048576`, rules: [
-      { type: 'expression', formulae: [`${cl}2="✓"`], style: { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E4F4E4' } }, font: { color: { argb: C.green }, bold: true, size: 14 } } },
-      { type: 'expression', formulae: [`${cl}2="✗"`], style: { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FBE4E4' } }, font: { color: { argb: C.red }, bold: true, size: 14 } } },
+    const colL = cl(c)
+    dc.getColumn(c).eachCell((cell, rn) => { if (rn > 1) { cell.dataValidation = { type: 'list', formulae: ['"✓,✗"'], allowBlank: true }; cell.value = '✗' } })
+    dc.addConditionalFormatting({ ref: `${colL}2:${colL}1048576`, rules: [
+      { type: 'expression', formulae: [`${colL}2="✓"`], style: { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E4F4E4' } }, font: { color: { argb: C.green }, bold: true, size: 14 } } },
+      { type: 'expression', formulae: [`${colL}2="✗"`], style: { fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FBE4E4' } }, font: { color: { argb: C.red }, bold: true, size: 14 } } },
     ]})
   }
 
-  // ════════════════════════════════ Sheet 5: Dashboard ════════════════════════
+  // ════════════════════════ 5 · Dashboard ════════════════════════
   const db = wb.addWorksheet('Dashboard', { properties: { tabColor: { argb: C.purple } } })
   db.columns = [
-    { header: 'المؤشر', key: 'i', width: 24 }, { header: 'القيمة', key: 'v', width: 14 },
-    { header: '', key: 's1', width: 3 },
-    { header: 'المؤشر', key: 'i2', width: 22 }, { header: 'القيمة', key: 'v2', width: 18 },
-    { header: '', key: 's2', width: 3 },
-    { header: 'التاريخ', key: 'd', width: 14 }, { header: 'عدد المتقدمين', key: 'dc', width: 18 },
-    { header: '', key: 's3', width: 3 },
-    { header: 'المدرسة', key: 'sc', width: 22 }, { header: 'العدد', key: 'scn', width: 12 },
-    { header: '', key: 's4', width: 3 },
-    { header: 'المحافظة', key: 'gv', width: 16 }, { header: 'العدد', key: 'gvn', width: 12 },
+    { header: 'بطاقات الأداء', key: 'a1', width: 24 }, { header: 'القيمة', key: 'b1', width: 14 },
+    { header: '', key: 'sp1', width: 3 },
+    { header: 'مؤشرات الأداء', key: 'a2', width: 22 }, { header: 'القيمة', key: 'b2', width: 16 },
+    { header: '', key: 'sp2', width: 4 },
+    { header: '📅 التسجيلات اليومية', key: 'a3', width: 14 }, { header: 'العدد', key: 'b3', width: 14 },
+    { header: '', key: 'sp3', width: 4 },
+    { header: '🏫 المدارس', key: 'a4', width: 18 }, { header: 'العدد', key: 'b4', width: 12 },
+    { header: '', key: 'sp4', width: 4 },
+    { header: '🌍 المحافظات', key: 'a5', width: 16 }, { header: 'العدد', key: 'b5', width: 12 },
   ]
-  styleHdr(db, 14)
+  // Custom header — merge sections
+  hdr(db, 16)
+  // override header row to show section names
+  db.getRow(1).getCell(1).value = '📊 بطاقات الأداء'
+  db.getRow(1).getCell(4).value = '📈 مؤشرات الأداء'
+  db.getRow(1).getCell(7).value = '📅 التسجيلات اليومية'
+  db.getRow(1).getCell(10).value = '🏫 توزيع المدارس'
+  db.getRow(1).getCell(13).value = '🌍 توزيع المحافظات'
 
-  // Row 2: summary cards + KPI + chart data headers
+  // ── Col A-B: Summary cards ──
+  const cardColors = [C.blue, C.green, C.red, C.yellow, C.orange, C.gray]
   const cards = [
     '📋 إجمالي الطلبات', '🟢 المقبولين', '🔴 المرفوضين',
-    '🟡 تحت المراجعة', '🟠 ناقص مستندات', 'بانتظار التواصل',
+    '🟡 تحت المراجعة', '🟠 ناقص مستندات', '⏳ بانتظار التواصل',
   ]
   cards.forEach((c, i) => {
-    db.getCell(`A${i + 2}`).value = c
-    db.getCell(`A${i + 2}`).font = { bold: true, color: { argb: [C.blue, C.green, C.red, C.yellow, C.orange, C.gray][i] }, size: 12 }
-    db.getCell(`B${i + 2}`).value = formula(`=Statistics!B${i + 2}`)
-    db.getCell(`B${i + 2}`).font = { bold: true, size: 18, color: { argb: [C.blue, C.green, C.red, C.yellow, C.orange, C.gray][i] } }
+    const rowI = i + 2
+    db.getCell(`A${rowI}`).value = c
+    db.getCell(`A${rowI}`).font = { bold: true, size: 12, color: { argb: cardColors[i] } }
+    db.getCell(`B${rowI}`).value = fm(`=Statistics!B${i + 2}`)
+    db.getCell(`B${rowI}`).font = { bold: true, size: 18, color: { argb: cardColors[i] } }
   })
 
-  // KPI section (D2:E8)
-  db.getCell('D2').value = '📊 مؤشرات الأداء'
-  db.getCell('D2').font = { bold: true, size: 12, color: { argb: C.blue } }
-
+  // ── Col D-E: KPIs ──
+  const dateCL = cl(12) // submission date column
   const kpis = [
-    { label: 'آخر تسجيل',          f: `=MAX(Applications!${colLetter(12)}2:${colLetter(12)}1048576)` },
-    { label: 'أول تسجيل',          f: `=MIN(Applications!${colLetter(12)}2:${colLetter(12)}1048576)` },
-    { label: 'متوسط التسجيل يوميًا', f: `=IFERROR(ROUND(Statistics!B2/MAX(DAYS(MAX(Applications!${colLetter(12)}2:${colLetter(12)}1048576),MIN(Applications!${colLetter(12)}2:${colLetter(12)}1048576)),1),1),0)` },
-    { label: 'نسبة اكتمال البيانات', f: `=IFERROR(ROUND(COUNTIF(Applications!A2:A1048576,"<>")/COUNTA(Applications!A2:A1048576)*100,1)&"%","0%")` },
+    { lbl: 'آخر تسجيل',          f: `=MAX(Applications!${dateCL}2:${dateCL}1048576)` },
+    { lbl: 'أول تسجيل',          f: `=MIN(Applications!${dateCL}2:${dateCL}1048576)` },
+    { lbl: 'متوسط التسجيل يوميًا', f: `=IFERROR(ROUND(Statistics!B2/MAX(DAYS(MAX(Applications!${dateCL}2:${dateCL}1048576),MIN(Applications!${dateCL}2:${dateCL}1048576)),1),1),0)` },
+    { lbl: 'نسبة اكتمال البيانات', f: `=IFERROR(ROUND(COUNTIF(Applications!A2:A1048576,"<>")/COUNTA(Applications!A2:A1048576)*100,1)&"%","0%")` },
   ]
   kpis.forEach((k, i) => {
-    db.getCell(`D${3 + i}`).value = k.label
-    db.getCell(`D${3 + i}`).font = { bold: true, color: { argb: C.blue }, size: 10 }
-    db.getCell(`E${3 + i}`).value = formula(k.f)
-    db.getCell(`E${3 + i}`).font = { bold: true, size: 12, color: { argb: C.teal } }
+    const rowI = i + 2
+    db.getCell(`D${rowI}`).value = k.lbl
+    db.getCell(`D${rowI}`).font = { bold: true, size: 11, color: { argb: C.blue } }
+    db.getCell(`E${rowI}`).value = fm(k.f)
+    db.getCell(`E${rowI}`).font = { bold: true, size: 13, color: { argb: C.teal } }
   })
 
-  // E8 divider
-  db.getCell('D8').value = ''; db.getCell('E8').value = ''
+  // ── Col G-H: Daily registrations (unique dates + counts, compatible) ──
+  db.getRow(2).getCell(7).value = 'التاريخ'
+  db.getRow(2).getCell(7).font = fH; db.getRow(2).getCell(7).fill = hFill(); db.getRow(2).getCell(7).alignment = hA()
+  db.getRow(2).getCell(8).value = 'العدد'
+  db.getRow(2).getCell(8).font = fH; db.getRow(2).getCell(8).fill = hFill(); db.getRow(2).getCell(8).alignment = hA()
 
-  // Chart data tables — compatible formulas only
-  // School distribution (G2:H↓) — references Statistics
-  db.getCell('G2').value = 'المدرسة'; db.getCell('G2').font = FH; db.getCell('G2').fill = HB(); db.getCell('G2').alignment = HA()
-  db.getCell('H2').value = 'العدد';   db.getCell('H2').font = FH; db.getCell('H2').fill = HB(); db.getCell('H2').alignment = HA()
-  db.getCell('G3').value = formula(`=Statistics!A11:A`)
-  db.getCell('H3').value = formula(`=Statistics!B11:B`)
+  db.getCell('G3').value = fm(
+    `IFERROR(INDEX(Applications!$${dateCL}$2:$${dateCL}$9999, MATCH(0, INDEX(COUNTIF($G$2:$G2, Applications!$${dateCL}$2:$${dateCL}$9999), 0), 0)), "")`
+  )
+  db.getCell('H3').value = fm(`IF(G3="","",COUNTIF(Applications!$${dateCL}$2:$${dateCL}$9999, G3))`)
 
-  // Governorate distribution (J2:K↓) — references Statistics
-  db.getCell('J2').value = 'المحافظة'; db.getCell('J2').font = FH; db.getCell('J2').fill = HB(); db.getCell('J2').alignment = HA()
-  db.getCell('K2').value = 'العدد';    db.getCell('K2').font = FH; db.getCell('K2').fill = HB(); db.getCell('K2').alignment = HA()
-  db.getCell('J3').value = formula(`=Statistics!D9:D`)
-  db.getCell('K3').value = formula(`=Statistics!E9:E`)
+  // ── Col J-K: School distribution (references Statistics) ──
+  db.getRow(2).getCell(10).value = 'المدرسة'
+  db.getRow(2).getCell(10).font = fH; db.getRow(2).getCell(10).fill = hFill(); db.getRow(2).getCell(10).alignment = hA()
+  db.getRow(2).getCell(11).value = 'العدد'
+  db.getRow(2).getCell(11).font = fH; db.getRow(2).getCell(11).fill = hFill(); db.getRow(2).getCell(11).alignment = hA()
+  db.getCell(`J3`).value = fm(`=Statistics!A${schoolDataRow}:A1048576`)
+  db.getCell(`K3`).value = fm(`=Statistics!B${schoolDataRow}:B1048576`)
 
-  // Daily data (M2:N↓) — manual note since UNIQUE not available in Excel 2019
-  db.getCell('M2').value = '📈 بيانات الرسم البياني'
-  db.getCell('M2').font = { bold: true, size: 10, color: { argb: C.blue } }
-  db.getCell('M3').value = 'استخدم PivotTable للرسوم البيانية'
-  db.getCell('M3').font = { color: { argb: C.gray }, italic: true, size: 9 }
+  // ── Col M-N: Governorate distribution (references Statistics) ──
+  db.getRow(2).getCell(13).value = 'المحافظة'
+  db.getRow(2).getCell(13).font = fH; db.getRow(2).getCell(13).fill = hFill(); db.getRow(2).getCell(13).alignment = hA()
+  db.getRow(2).getCell(14).value = 'العدد'
+  db.getRow(2).getCell(14).font = fH; db.getRow(2).getCell(14).fill = hFill(); db.getRow(2).getCell(14).alignment = hA()
+  db.getCell(`M3`).value = fm(`=Statistics!A${govDataRow}:A1048576`)
+  db.getCell(`N3`).value = fm(`=Statistics!B${govDataRow}:B1048576`)
 
   db.views = [{ state: 'frozen', ySplit: 1 }]
 
-  // ════════════════════════════════ Save ════════════════════════════════
+  // ════════════════════════ Save ════════════════════════
   const f = 'WE_Schools_v2.xlsx'
   await wb.xlsx.writeFile(f)
-  console.log(`\n  ✅ Created: ${f} (${APP_COLS.length} cols · 5 sheets · Excel 2019+ compatible)\n`)
+  console.log(`\n  ✅ Created: ${f}`)
+  console.log(`  ${APP_COLS.length} cols · 5 sheets · Excel 2019+ (no CSE, no QUERY/FILTER/UNIQUE)\n`)
 }
 
 main().catch(e => { console.error('Error:', e.message); process.exit(1) })

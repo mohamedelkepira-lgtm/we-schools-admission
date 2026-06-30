@@ -1,326 +1,175 @@
 /**
  * WE Schools — Admission Portal Sheet Setup
  *
- * كيف تستخدمه:
- * 1. افتح Google Sheets → أنشأ جدول جديد (File > New Spreadsheet)
+ * 1. أنشأ جدول جديد (File > New Spreadsheet)
  * 2. Extensions > Apps Script
- * 3. إلصق كل محتوى هذا الملف
- * 4. احفظ (Ctrl+S) وسمّ المشروع "WE Schools Setup"
- * 5. شغّل الدالة setupWESheet() — أول مرة هتطلب أذونات، وافق
- * 6. بعد ما يخلص، ارجع للـ Sheet — هتلاقي 5 شيتات جاهزة
+ * 3. إلصق المحتوى → احفظ → شغّل setupWESheet()
+ * 4. خذ Sheet ID من الرابط (gid/XXXXX)
+ * 5. حطه في GOOGLE_SHEET_ID (إعدادات Vercel)
+ * 6. الموقع هيكتب تلقائي في Applications — باقي الشيتات بتتحسب لوحدها
  */
 
 function setupWESheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet()
   ss.setName('WE Schools - Admission Portal')
 
-  // ──── Rename default sheet ────
-  const app = ss.getSheetByName('Sheet1')
-  if (app) app.setName('Applications')
-
-  // ──── Add sheets ────
+  // ──── Sheets ────
+  const app = ss.getSheetByName('Sheet1'); if (app) app.setName('Applications')
   const names = ['Statistics', 'Search', 'Documents', 'Dashboard']
-  const sheets = { Applications: app }
-  for (const n of names) {
-    const s = ss.getSheetByName(n)
-    sheets[n] = s || ss.insertSheet(n)
-  }
+  const sheets = { Applications: app || ss.insertSheet('Applications') }
+  for (const n of names) sheets[n] = ss.getSheetByName(n) || ss.insertSheet(n)
 
-  // ──── Applications headers (20 cols) ────
-  const appHeaders = [
-    'رقم الطلب', 'اسم الطالب', 'كود الطالب', 'المدرسة السابقة',
-    'رقم الطالب', 'رقم ولي الأمر', 'الحالة الاجتماعية', 'حالة الطلب', 'تاريخ التقديم',
-    'الاسم بالإنجليزية', 'تاريخ الميلاد', 'الجنس', 'الجنسية', 'الديانة',
-    'العنوان', 'البريد الإلكتروني', 'رقم بطاقة الطالب',
-    'اسم ولي الأمر', 'رقم بطاقة ولي الأمر', 'بريد ولي الأمر',
+  // ═══════════════════════════ Applications (26 cols — matches API) ═══════════
+  const a = sheets.Applications; a.clear()
+  const appH = [
+    'رقم الطلب','اسم الطالب','كود الطالب','المدرسة السابقة','الصف الدراسي السابق',
+    'المحافظة','المركز / المدينة','رقم الطالب','رقم ولي الأمر','الحالة الاجتماعية',
+    'حالة الطلب','تاريخ التقديم','وقت آخر تعديل','الاسم بالإنجليزية','تاريخ الميلاد',
+    'الجنس','الجنسية','الديانة','مهنة الأب','مهنة الأم','العنوان','البريد الإلكتروني',
+    'رقم بطاقة الطالب','اسم ولي الأمر','رقم بطاقة ولي الأمر','بريد ولي الأمر',
   ]
-  const a = sheets.Applications
-  a.clear()
-  a.getRange(1, 1, 1, appHeaders.length).setValues([appHeaders])
-  a.setFrozenRows(1)
+  a.getRange(1,1,1,26).setValues([appH]); a.setFrozenRows(1)
+  for (let c = 1; c <= 26; c++) a.setColumnWidth(c, c <= 13 ? 140 : 160)
 
-  // ──── Statistics ────
-  const s = sheets.Statistics
-  s.clear()
-  s.getRange('A1:B1').setValues([['الإحصائية', 'القيمة']])
-  s.getRange('A2').setValue('إجمالي المتقدمين')
-  s.getRange('B2').setFormula('=COUNTA(Applications!A2:A)')
-  s.getRange('A3').setValue('عدد المقبولين')
-  s.getRange('B3').setFormula('=COUNTIF(Applications!H2:H, "مقبول")')
-  s.getRange('A4').setValue('عدد المرفوضين')
-  s.getRange('B4').setFormula('=COUNTIF(Applications!H2:H, "مرفوض")')
-  s.getRange('A5').setValue('قيد المراجعة')
-  s.getRange('B5').setFormula('=COUNTIF(Applications!H2:H, "قيد المراجعة")')
+  // Data validation
+  a.getRange('J2:J').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['أعزب','متزوج'],true).setAllowInvalid(false).build())
+  a.getRange('K2:K').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['قيد المراجعة','مقبول','مرفوض','ناقص مستندات','بانتظار التواصل'],true).setAllowInvalid(false).build())
 
-  s.getRange('A7').setValue('الطلاب حسب المدرسة')
-  s.getRange('A8:B8').setValues([['المدرسة', 'العدد']])
-  s.getRange('A9').setFormula(
-    '=QUERY(Applications!D2:D, "select D, count(D) where D is not null group by D order by count(D) desc label D \'المدرسة\', count(D) \'العدد\'")'
-  )
-
-  s.getRange('D7').setValue('الطلاب حسب المحافظة')
-  s.getRange('D8:E8').setValues([['المحافظة', 'العدد']])
-  // Uses Applications!N:N (الديانة column as proxy — replace with actual gov column if added)
-  // s.getRange('D9').setFormula('=QUERY(Applications!N2:N, "select N, count(N) where N is not null group by N order by count(N) desc label N \'المحافظة\', count(N) \'العدد\'")')
-
-  s.getRange('D7').setNote('أضف عمود "المحافظة" في Applications ثم فعّل الصيغة في D9')
-  s.setFrozenRows(1)
-
-  // ──── Search ────
-  const search = sheets.Search
-  search.clear()
-  search.getRange('A1:I1').setValues([appHeaders.slice(0, 9)])
-  search.getRange('A2').setValue('🔍 اكتب رقم الطلب / اسم الطالب / كود الطالب').setFontSize(10)
-  search.getRange('B2').setFontSize(12).setHorizontalAlignment('center')
-  search.setFrozenRows(1)
-  // Merged label cell
-  search.getRange('A2:A2').merge().setHorizontalAlignment('center').setVerticalAlignment('middle')
-  search.getRange('A3').setFormula(
-    '=IFERROR(FILTER(Applications!A:I, (Applications!A:A=B2)+(Applications!B:B=B2)+(Applications!C:C=B2)), "لا توجد نتائج — أدخل رقم الطلب أو الاسم أو الكود في الخلية B2")'
-  )
-
-  // ──── Documents ────
-  const docHeaders = [
-    'رقم الطلب', 'اسم الطالب', 'شهادة الميلاد', 'بطاقة الطالب',
-    'بطاقة ولي الأمر', 'الصور الشخصية', 'ملف التقديم',
+  // Conditional formatting — status (col K)
+  const statusClr = [
+    {v:'مقبول',bg:'#e4f4e4',fg:'#1e7e1e'},
+    {v:'مرفوض',bg:'#fbe4e4',fg:'#b82424'},
+    {v:'قيد المراجعة',bg:'#fef7da',fg:'#ab7f12'},
+    {v:'ناقص مستندات',bg:'#fff0e0',fg:'#cc6600'},
+    {v:'بانتظار التواصل',bg:'#e8ecf0',fg:'#6b7280'},
   ]
-  const d = sheets.Documents
-  d.clear()
-  d.getRange(1, 1, 1, docHeaders.length).setValues([docHeaders])
-  d.setFrozenRows(1)
-
-  // Document status dropdowns
-  const docStatusRule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(['تم التسليم', 'غير مسلم'], true)
-    .setAllowInvalid(false)
-    .build()
-
-  for (let col = 3; col <= docHeaders.length; col++) {
-    const range = d.getRange(2, col, 500)
-    range.setDataValidation(docStatusRule)
+  const rules = []
+  for (const s of statusClr) {
+    rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(s.v).setBackground(s.bg).setFontColor(s.fg).setRanges([a.getRange('A2:Z')]).build())
   }
+  a.setConditionalFormatRules(rules)
 
-  // ──── Dashboard ────
-  const db = sheets.Dashboard
-  db.clear()
+  // ═══════════════════════════ Statistics ═══════════════════════════
+  const st = sheets.Statistics; st.clear()
+  st.getRange('A1:B1').setValues([['الإحصائية','القيمة']])
+  const stats = [
+    ['📋 إجمالي المتقدمين',     '=COUNTA(Applications!A2:A)'],
+    ['🟢 المقبولين',             '=COUNTIF(Applications!K2:K,"مقبول")'],
+    ['🔴 المرفوضين',             '=COUNTIF(Applications!K2:K,"مرفوض")'],
+    ['🟡 قيد المراجعة',          '=COUNTIF(Applications!K2:K,"قيد المراجعة")'],
+    ['🟠 ناقص مستندات',         '=COUNTIF(Applications!K2:K,"ناقص مستندات")'],
+    ['⏳ بانتظار التواصل',       '=COUNTIF(Applications!K2:K,"بانتظار التواصل")'],
+  ]
+  stats.forEach((r,i) => st.getRange(i+2,1,1,2).setValues([r]))
+  st.getRange('B2').setFontSize(18).setFontWeight('bold').setFontColor('#1e3a5f')
+  st.getRange('B3:B7').setFontSize(16).setFontWeight('bold')
+  st.getRange('B3').setFontColor('#1e7e1e'); st.getRange('B4').setFontColor('#b82424')
+  st.getRange('B5').setFontColor('#ab7f12'); st.getRange('B6').setFontColor('#cc6600')
+  st.getRange('B7').setFontColor('#6b7280')
+
+  // School distribution
+  st.getRange('A9:A10').setValues([['🏫 توزيع المدارس'],['المدرسة']])
+  st.getRange('B10').setValue('العدد')
+  st.getRange('A11').setFormula('=QUERY(Applications!D2:D,"select D,count(D) where D is not null group by D order by count(D) desc label D \'المدرسة\', count(D) \'العدد\'")')
+
+  // Governorate distribution
+  st.getRange('D9:D10').setValues([['🌍 توزيع المحافظات'],['المحافظة']])
+  st.getRange('E10').setValue('العدد')
+  st.getRange('D11').setFormula('=QUERY(Applications!F2:F,"select F,count(F) where F is not null group by F order by count(F) desc label F \'المحافظة\', count(F) \'العدد\'")')
+
+  st.setFrozenRows(1); st.setColumnWidth(1,250); st.setColumnWidth(2,150)
+
+  // ═══════════════════════════ Search ═══════════════════════════
+  const sr = sheets.Search; sr.clear()
+  sr.getRange(1,1,1,26).setValues([appH]); sr.setFrozenRows(1)
+  sr.getRange('A2').setValue('🔍 اكتب رقم الطلب / اسم الطالب / كود الطالب').setFontSize(10).setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle')
+  sr.getRange('B2').setFontSize(12).setHorizontalAlignment('center').setBackground('#fff9e0')
+  sr.getRow(2).setHeight(30)
+  sr.getRange('A3').setFormula('=IFERROR(FILTER(Applications!A:Z, (Applications!A:A=B2)+(Applications!B:B=B2)+(Applications!C:C=B2)), "ابحث بالرقم أو الاسم أو الكود")')
+  sr.setColumnWidth(1,300); sr.setColumnWidth(2,400)
+
+  // ═══════════════════════════ Documents ═══════════════════════════
+  const d = sheets.Documents; d.clear()
+  const docH = ['رقم الطلب','اسم الطالب','شهادة الميلاد','بطاقة الطالب','بطاقة ولي الأمر','الصور الشخصية','ملف التقديم']
+  d.getRange(1,1,1,7).setValues([docH]); d.setFrozenRows(1)
+  const dv = SpreadsheetApp.newDataValidation().requireValueInList(['تم التسليم','غير مسلم'],true).setAllowInvalid(false).build()
+  for (let c = 3; c <= 7; c++) d.getRange(2,c,500).setDataValidation(dv)
+
+  // Conditional formatting
+  const docRules = []
+  for (let c = 3; c <= 7; c++) {
+    docRules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('تم التسليم').setBackground('#e4f4e4').setFontColor('#1e7e1e').setRanges([d.getRange(2,c,500)]).build())
+    docRules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('غير مسلم').setBackground('#fbe4e4').setFontColor('#b82424').setRanges([d.getRange(2,c,500)]).build())
+  }
+  d.setConditionalFormatRules(docRules)
+
+  // ═══════════════════════════ Dashboard ═══════════════════════════
+  const db = sheets.Dashboard; db.clear()
 
   // Summary cards
-  const cardHeaders = ['المؤشر', 'القيمة']
-  db.getRange('A1:B1').setValues([cardHeaders])
-  db.getRange('A2').setValue('إجمالي المتقدمين')
-  db.getRange('B2').setFormula('=Statistics!B2')
-  db.getRange('A3').setValue('المقبولين')
-  db.getRange('B3').setFormula('=Statistics!B3')
-  db.getRange('A4').setValue('المرفوضين')
-  db.getRange('B4').setFormula('=Statistics!B4')
-  db.getRange('A5').setValue('قيد المراجعة')
-  db.getRange('B5').setFormula('=Statistics!B5')
+  db.getRange('A1:B1').setValues([['بطاقات الأداء','القيمة']])
+  const cards = [
+    ['📋 إجمالي الطلبات','=Statistics!B2'],['🟢 المقبولين','=Statistics!B3'],
+    ['🔴 المرفوضين','=Statistics!B4'],['🟡 تحت المراجعة','=Statistics!B5'],
+    ['🟠 ناقص مستندات','=Statistics!B6'],['⏳ بانتظار التواصل','=Statistics!B7'],
+  ]
+  cards.forEach((r,i) => db.getRange(i+2,1,1,2).setValues([r]))
+  db.getRange('B2:B7').setFontSize(18).setFontWeight('bold')
+  db.getRange('B2').setFontColor('#1e3a5f'); db.getRange('B3').setFontColor('#1e7e1e')
+  db.getRange('B4').setFontColor('#b82424'); db.getRange('B5').setFontColor('#ab7f12')
+  db.getRange('B6').setFontColor('#cc6600'); db.getRange('B7').setFontColor('#6b7280')
 
-  // Daily applicants chart data
-  db.getRange('D1:E1').setValues([['التاريخ', 'عدد المتقدمين']])
-  db.getRange('D2').setFormula(
-    '=UNIQUE(Applications!I2:I)'
-  )
-  db.getRange('E2').setFormula(
-    '=ARRAYFORMULA(IF(D2:D="",,COUNTIF(Applications!I2:I, D2:D)))'
-  )
+  // KPIs
+  db.getRange('D1:E1').setValues([['مؤشرات الأداء','القيمة']])
+  const kpis = [
+    ['آخر تسجيل','=MAX(Applications!L2:L)'],
+    ['أول تسجيل','=MIN(Applications!L2:L)'],
+    ['متوسط التسجيل يوميًا','=IFERROR(ROUND(Statistics!B2/MAX(DAYS(MAX(Applications!L2:L),MIN(Applications!L2:L)),1),1),0)'],
+    ['نسبة اكتمال البيانات','=IFERROR(ROUND(COUNTIF(Applications!A2:A,"<>")/COUNTA(Applications!A2:A)*100,1)&"%","0%")'],
+  ]
+  kpis.forEach((r,i) => db.getRange(i+2,4,1,2).setValues([r]))
+
+  // Daily registrations chart data
+  db.getRange('G1:H1').setValues([['التاريخ','عدد المتقدمين']])
+  db.getRange('G2').setFormula('=UNIQUE(Applications!L2:L)')
+  db.getRange('H2').setFormula('=ARRAYFORMULA(IF(G2:G="",,COUNTIF(Applications!L2:L,G2:G)))')
 
   // School distribution chart data
-  db.getRange('G1:H1').setValues([['المدرسة', 'العدد']])
-  db.getRange('G2').setFormula('=Statistics!A9:A')
-  db.getRange('H2').setFormula('=Statistics!B9:B')
+  db.getRange('J1:K1').setValues([['المدرسة','العدد']])
+  db.getRange('J2').setFormula('=Statistics!A11:A')
+  db.getRange('K2').setFormula('=Statistics!B11:B')
+
+  // Governorate distribution chart data
+  db.getRange('M1:N1').setValues([['المحافظة','العدد']])
+  db.getRange('M2').setFormula('=Statistics!D11:D')
+  db.getRange('N2').setFormula('=Statistics!E11:E')
 
   db.setFrozenRows(1)
 
-  // ──── Formatting ────
-  const headerBg = '#1e3a5f'
-  const headerFg = '#ffffff'
+  // ──── Charts ────
+  const oldCharts = db.getCharts(); for (const c of oldCharts) db.removeChart(c)
 
-  for (const [key, sheet] of Object.entries(sheets)) {
-    const lastCol = sheet.getLastColumn() || 1
-    const headerRange = sheet.getRange(1, 1, 1, lastCol)
-    headerRange
-      .setBackground(headerBg)
-      .setFontColor(headerFg)
-      .setFontWeight('bold')
-      .setFontSize(11)
-      .setHorizontalAlignment('center')
-      .setVerticalAlignment('middle')
-    sheet.setRowHeight(1, 32)
+  db.insertChart(db.newChart().setChartType(Charts.ChartType.LINE).addRange(db.getRange('G1:H')).setPosition(7,1,0,0)
+    .setOption('title','📈 عدد المتقدمين يوميًا').setOption('width',500).setOption('height',300)
+    .setOption('legend',{position:'none'}).setOption('colors',['#1e3a5f']).setOption('curveType','function').build())
 
-    // Alternating rows
-    const dataRange = sheet.getRange(2, 1, Math.max(sheet.getLastRow(), 500), lastCol)
-    if (key !== 'Dashboard') {
-      dataRange.setAlternatingBackgroundColors(['#f8f9fb', '#ffffff'])
-    }
-  }
+  db.insertChart(db.newChart().setChartType(Charts.ChartType.PIE).addRange(db.getRange('J1:K')).setPosition(7,6,0,0)
+    .setOption('title','🏫 أكثر المدارس المتقدم منها').setOption('width',450).setOption('height',300)
+    .setOption('pieSliceText','label').setOption('colors',['#1e3a5f','#c8952e','#2d5a8e','#e8c469','#5a7fa0']).build())
 
-  // Applications: column widths
-  a.setColumnWidth(1, 130)  // request #
-  a.setColumnWidth(2, 180)  // student name
-  a.setColumnWidth(3, 140)  // code
-  a.setColumnWidth(4, 200)  // school
-  a.setColumnWidth(5, 130)  // student phone
-  a.setColumnWidth(6, 130)  // parent phone
-  a.setColumnWidth(7, 120)  // social status
-  a.setColumnWidth(8, 120)  // app status
-  a.setColumnWidth(9, 150)  // date
-  for (let c = 10; c <= 20; c++) a.setColumnWidth(c, 150)
+  db.insertChart(db.newChart().setChartType(Charts.ChartType.PIE).addRange(db.getRange('A3:B5')).setPosition(18,1,0,0)
+    .setOption('title','🟢 حالة الطلبات').setOption('width',400).setOption('height',250)
+    .setOption('colors',['#1e7e1e','#b82424','#ab7f12']).build())
 
-  // Statistics column widths
-  s.setColumnWidth(1, 250)
-  s.setColumnWidth(2, 150)
-
-  // Search column widths
-  search.setColumnWidth(1, 350) // merged label
-  search.setColumnWidth(2, 400) // input cell
-
-  // Documents column widths
-  d.setColumnWidth(1, 130)
-  d.setColumnWidth(2, 180)
-  for (let c = 3; c <= docHeaders.length; c++) d.setColumnWidth(c, 130)
-
-  // Dashboard column widths
-  db.setColumnWidth(1, 200)
-  db.setColumnWidth(2, 120)
-
-  // ──── Conditional formatting: Applications & Documents ────
-  // Applications — status colors (column H)
-  const appStatusRange = a.getRange('H2:H')
-  const accRule = SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo('مقبول')
-    .setBackground('#e4f4e4')
-    .setFontColor('#1e7e1e')
-    .setRanges([a.getRange('A2:T')])
-    .build()
-  const rejRule = SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo('مرفوض')
-    .setBackground('#fbe4e4')
-    .setFontColor('#b82424')
-    .setRanges([a.getRange('A2:T')])
-    .build()
-  const penRule = SpreadsheetApp.newConditionalFormatRule()
-    .whenTextEqualTo('قيد المراجعة')
-    .setBackground('#fef7da')
-    .setFontColor('#ab7f12')
-    .setRanges([a.getRange('A2:T')])
-    .build()
-  const rules = a.getConditionalFormatRules()
-  rules.push(accRule, rejRule, penRule)
-  a.setConditionalFormatRules(rules)
-
-  // Documents — status colors
-  const docRules = []
-  for (let col = 3; col <= docHeaders.length; col++) {
-    const r = d.getRange(2, col, 500)
-    docRules.push(
-      SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo('تم التسليم')
-        .setBackground('#e4f4e4')
-        .setFontColor('#1e7e1e')
-        .setRanges([r])
-        .build()
-    )
-    docRules.push(
-      SpreadsheetApp.newConditionalFormatRule()
-        .whenTextEqualTo('غير مسلم')
-        .setBackground('#fbe4e4')
-        .setFontColor('#b82424')
-        .setRanges([r])
-        .build()
-    )
-  }
-  const existingDocRules = d.getConditionalFormatRules()
-  d.setConditionalFormatRules(existingDocRules.concat(docRules))
-
-  // ──── Data validation: Applications ────
-  // Social status (G)
-  const socialRule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(['أعزب', 'متزوج'], true)
-    .setAllowInvalid(false)
-    .build()
-  a.getRange('G2:G').setDataValidation(socialRule)
-
-  // Application status (H)
-  const statusRule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(['قيد المراجعة', 'مقبول', 'مرفوض'], true)
-    .setAllowInvalid(false)
-    .build()
-  a.getRange('H2:H').setDataValidation(statusRule)
-
-  // ──── Charts: Dashboard ────
-  // Remove existing charts
-  const charts = db.getCharts()
-  for (const chart of charts) db.removeChart(chart)
-
-  // 1. Daily applicants — line chart
-  const dailyData = db.getRange('D1:E')
-  const dailyChart = db.newChart()
-    .setChartType(Charts.ChartType.LINE)
-    .addRange(dailyData)
-    .setPosition(7, 1, 0, 0)
-    .setOption('title', '📈 عدد المتقدمين يوميًا')
-    .setOption('width', 500)
-    .setOption('height', 300)
-    .setOption('legend', { position: 'none' })
-    .setOption('colors', ['#1e3a5f'])
-    .setOption('curveType', 'function')
-    .build()
-  db.insertChart(dailyChart)
-
-  // 2. School distribution — pie chart
-  const schoolData = db.getRange('G1:H')
-  const schoolChart = db.newChart()
-    .setChartType(Charts.ChartType.PIE)
-    .addRange(schoolData)
-    .setPosition(7, 6, 0, 0)
-    .setOption('title', '🏫 أكثر المدارس المتقدم منها')
-    .setOption('width', 450)
-    .setOption('height', 300)
-    .setOption('pieSliceText', 'label')
-    .setOption('colors', ['#1e3a5f', '#c8952e', '#2d5a8e', '#e8c469', '#5a7fa0'])
-    .build()
-  db.insertChart(schoolChart)
-
-  // 3. Application status — pie chart
-  const statusData = db.getRange('A3:B5')
-  const statusChart = db.newChart()
-    .setChartType(Charts.ChartType.PIE)
-    .addRange(statusData)
-    .setPosition(18, 1, 0, 0)
-    .setOption('title', '🟢 حالة الطلبات')
-    .setOption('width', 400)
-    .setOption('height', 250)
-    .setOption('colors', ['#1e7e1e', '#b82424', '#ab7f12'])
-    .build()
-  db.insertChart(statusChart)
-
-  // 4. Completion gauge — bar chart
-  const compData = db.getRange('A1:B5')
-  const compChart = db.newChart()
-    .setChartType(Charts.ChartType.BAR)
-    .addRange(compData)
-    .setPosition(18, 6, 0, 0)
-    .setOption('title', '📊 إحصائيات عامة')
-    .setOption('width', 450)
-    .setOption('height', 250)
-    .setOption('colors', ['#1e3a5f'])
-    .setOption('hAxis', { title: 'العدد' })
-    .build()
-  db.insertChart(compChart)
-
-  // ──── Protection: prevent accidental header edits ────
-  const allSheets = Object.values(sheets)
-  for (const sheet of allSheets) {
-    const proto = sheet.getRange(1, 1, 1, sheet.getLastColumn() || 1).protect()
-    proto.setDescription('Header row — protected')
-    const me = Session.getEffectiveUser()
-    proto.addEditor(me)
-    proto.removeEditors(proto.getEditors().filter(e => e.getEmail() !== me.getEmail()))
+  // ──── Global formatting ────
+  for (const [k,sh] of Object.entries(sheets)) {
+    const last = sh.getLastColumn()||1
+    sh.getRange(1,1,1,last).setBackground('#1e3a5f').setFontColor('#ffffff').setFontWeight('bold').setFontSize(11).setHorizontalAlignment('center').setVerticalAlignment('middle')
+    sh.getRange(2,1,Math.max(sh.getLastRow(),500),last).setAlternatingBackgroundColors(['#f8f9fb','#ffffff'])
   }
 
   // ──── Done ────
   SpreadsheetApp.flush()
-  ss.toast('✅ WE Schools Admission Portal جاهز!', 'تم', 5)
-  console.log('Setup complete!')
+  ss.toast('✅ WE Schools جاهز — API هيكتب في Applications', 'تم', 5)
+  console.log('Sheet ID:', ss.getId())
 }
